@@ -1,5 +1,204 @@
 # AI Model Comparison Tool - Technical Requirements Document
 
+# AI Token Calculator Technical Documentation
+
+## Overview
+A React-based tool for calculating token usage and associated costs across major AI model providers.
+
+## Core Features
+- Real-time token calculation
+- Multi-provider cost estimation
+- File upload processing
+- Context window validation
+- Response limit checking
+
+## Technical Architecture
+
+### Component Structure
+```
+TokenCalculator/
+├── Core Component
+│   ├── State Management
+│   ├── File Processing
+│   └── Cost Calculations
+└── UI Components
+    ├── Provider Selection
+    ├── Model Configuration
+    ├── Input/Output Areas
+    └── Cost Analysis Display
+```
+
+### Data Model
+```typescript
+interface ModelInfo {
+  versions: string[];
+  contextWindow: Record<string, number>;
+  responseLimit: Record<string, number>;
+  inputCost: Record<string, number> | string;
+  outputCost: Record<string, number> | string;
+}
+
+interface ProviderData {
+  [provider: string]: {
+    [model: string]: ModelInfo;
+  }
+}
+```
+
+### Core Functions
+
+#### Token Calculation
+```javascript
+const calculateTokens = (text) => Math.ceil(text.length / 4);
+```
+
+#### Cost Estimation
+- Input Cost = (promptTokens * inputCostRate) / 1000
+- Output Cost = (responseTokens * outputCostRate) / 1000
+- Total Cost = Input Cost + Output Cost
+
+### File Processing Capabilities
+
+#### Supported Formats
+- PDF: Binary data processing via ArrayBuffer
+- CSV: Parsed using PapaParse
+- JSON: Native JSON parsing
+- Text: Direct text extraction
+
+#### File Processing Flow
+1. File upload trigger
+2. MIME type detection
+3. Format-specific processing
+4. Content extraction
+5. Token calculation
+6. UI update
+
+### Provider Integration
+
+#### OpenAI Models
+- GPT-4 variants with 128K-512K context
+- Per-token pricing for input/output
+- Response limits: 4K-16K tokens
+
+#### Anthropic Models
+- Claude family with 100K-200K context
+- Tiered pricing model
+- Response limits: 2K-4K tokens
+
+#### Google Models
+- Gemini series with 32K-128K context
+- Fixed per-token rates
+- Response limits: 2K-8K tokens
+
+#### Meta Models
+- Llama series (self-hosted)
+- 4K-8K context windows
+- No direct token costs
+
+#### Mistral Models
+- Three tiers: Small, Medium, Large
+- 32K context window
+- Variable input/output pricing
+
+### Error Handling
+```javascript
+try {
+  // File processing
+  // Token calculation
+  // Cost estimation
+} catch (error) {
+  setError('Error: ' + error.message);
+} finally {
+  setIsProcessing(false);
+}
+```
+
+### Performance Considerations
+- Debounced input processing
+- Memoized cost calculations
+- Optimized file chunk processing
+- UI state batching
+
+### Security Features
+- Client-side file processing
+- No data transmission
+- File size limits
+- Type validation
+
+## Implementation Guide
+
+### Setup
+```bash
+# Required dependencies
+npm install @/components/ui/card
+npm install papaparse
+```
+
+### Component Integration
+```javascript
+import { TokenCalculator } from './components';
+
+function App() {
+  return <TokenCalculator />;
+}
+```
+
+### State Management
+- Provider selection
+- Model configuration
+- Input/output content
+- Processing status
+- Error handling
+- Cost metrics
+
+### Event Handling
+- File uploads
+- Text input changes
+- Provider/model selection
+- Token calculation triggers
+
+### UI/UX Guidelines
+- Real-time feedback
+- Clear error messages
+- Processing indicators
+- Cost breakdowns
+- Limit warnings
+
+## Maintenance and Updates
+
+### Adding New Models
+1. Update modelData object
+2. Add version information
+3. Set context windows
+4. Configure pricing
+5. Update response limits
+
+### Version Control
+- Semantic versioning
+- Feature branches
+- Pull request reviews
+- Change documentation
+
+### Testing Strategy
+- Unit tests for calculations
+- Integration tests for file processing
+- UI component testing
+- Cross-browser verification
+
+### Performance Monitoring
+- Token calculation speed
+- File processing efficiency
+- UI responsiveness
+- Error rates
+
+## Future Enhancements
+1. Batch processing support
+2. Custom pricing tiers
+3. Export functionality
+4. Advanced PDF parsing
+5. Usage analytics
+
+
 ## 1. Data Sources
 
 Latest model parameters sourced from:
