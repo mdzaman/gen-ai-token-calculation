@@ -50,6 +50,70 @@ monthlyEstimate = monthlyPrompts * (
 withinContext = totalTokens <= contextWindowLimit
 ```
 
+### Calculation Breakdown by Models
+# Token Calculation Methods by Model Family
+
+## OpenAI (GPT-4 Series)
+```
+tokens = max(1, round(characters / 3.75))
+special_handling = {
+    'code': 2.5,  // characters per token
+    'whitespace': 4.5,
+    'chinese/japanese': 2.0,
+    'korean': 2.5
+}
+```
+
+## Anthropic (Claude Series)
+```
+tokens = max(1, round(characters / 3.6))
+special_tokens = {
+    '<admin>': 1,
+    '<human>': 1,
+    '<assistant>': 1,
+    'System:': 1
+}
+code_tokens = characters / 2.3
+```
+
+## Google (Gemini Series)
+```
+base_tokens = round(characters / 4)
+semantic_tokens = round(words / 1.3)
+tokens = max(base_tokens, semantic_tokens)
+special_case = {
+    'code': characters / 2.7,
+    'structured_data': characters / 3.2
+}
+```
+
+## Llama Series
+```
+tokens = round(characters / 3.85)
+specialized = {
+    'code': characters / 2.2,
+    'math': characters / 3.0,
+    'technical': characters / 3.5
+}
+```
+
+## Mistral Series
+```
+base_tokens = round(characters / 3.7)
+context_aware = words * 1.2
+tokens = max(base_tokens, context_aware)
+code_tokens = characters / 2.4
+```
+
+## Universal Approximation
+For quick estimation across all models:
+```
+approximate_tokens = round(characters / 4)
+```
+
+Note: These formulas are approximations based on observed behavior. Actual tokenization may vary based on content type, language, and special characters.
+
+
 ## 4. Usage Profiles
 
 ```javascript
