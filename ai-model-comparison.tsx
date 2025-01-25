@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import Papa from 'papaparse';
 
 const modelData = {
   'OpenAI': {
@@ -130,187 +132,271 @@ const modelData = {
   }
 };
 
-const monthlyUsageEstimates = {
-  low: { prompts: 1000, avgPromptLength: 500, avgResponseLength: 1000 },
-  medium: { prompts: 5000, avgPromptLength: 1000, avgResponseLength: 2000 },
-  high: { prompts: 20000, avgPromptLength: 2000, avgResponseLength: 4000 }
-};
-
-const AIModelComparison = () => {
+const TokenCalculator = () => {
+  const [provider, setProvider] = useState('OpenAI');
+  const [model, setModel] = useState('GPT-4');
+  const [version, setVersion] = useState('4-Opus');
   const [prompt, setPrompt] = useState('');
-  const [expectedResponse, setExpectedResponse] = useState('');
-  const [usageLevel, setUsageLevel] = useState('medium');
-  const [error, setError] = useState('');
+  const [response, setResponse] = useState('');
+  const [fileError, setFileError] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [metrics, setMetrics] = useState({
+    promptTokens: 0,
+    responseTokens: 0,
+    totalCost: 0,
+    withinLimits: true,
+    isHosted: true
+  });
 
-  const calculateTokens = (text) => {
+  const calculateTokens = (text) => Math.ceil(text.length / 4);
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setFileError('');
+    setIsProcessing(true);
+
     try {
-      return Math.ceil(text.length / 4);
-    } catch (e) {
-      setError('Error calculating tokens');
-      return 0;
+      if (file.type === 'text/csv') {
+        const text = await file.text();
+        const result = Papa.parse(text, { 
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true
+        });
+        setPrompt(JSON.stringify(result.data, null, 2));
+      } else if (file.type === 'application/json') {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        setPrompt(JSON.stringify(json, null, 2));
+      } else if (file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const text = await new TextDecoder().decode(uint8Array);
+        setPrompt(text);
+      } else {
+        const text = await file.text();
+        setPrompt(text);
+      }
+    } catch (error) {
+      setFileError('Error reading file: ' + error.message);
+      console.error('File processing error:', error);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const calculateMonthlyEstimate = (inputCost, outputCost, usage) => {
-    if (typeof inputCost === 'string') return inputCost;
+  const formatCost = (cost) => {
+    if (typeof cost === 'number') {
+      return `$${cost.toFixed(4)}`;
+    }
+    return cost;
+  };
+
+  useEffect(() => {
+    const promptTokens = calculateTokens(prompt);
+    const responseTokens = calculateTokens(response);
+    const totalTokens = promptTokens + responseTokens;
     
-    const estimate = usage.prompts * (
-      (usage.avgPromptLength * inputCost + usage.avgResponseLength * outputCost) / 1000
-    );
-    return estimate;
-  };
-
-  const getModelValue = (property, version) => {
-    if (!property) return 'N/A';
-    return typeof property === 'object' ? 
-      (property[version] || 'N/A') : property;
-  };
-
-  const calculateMetrics = (promptText, responseText, model, version) => {
-    try {
-      const promptTokens = calculateTokens(promptText);
-      const responseTokens = calculateTokens(responseText);
-      const totalTokens = promptTokens + responseTokens;
-      
-      const contextWindow = getModelValue(model.contextWindow, version);
-      const inputCost = getModelValue(model.inputCost, version);
-      const outputCost = getModelValue(model.outputCost, version);
-      
-      const currentCost = typeof inputCost === 'string' ? inputCost :
-        (promptTokens * inputCost + responseTokens * outputCost) / 1000;
-      
-      const monthlyEstimate = calculateMonthlyEstimate(
-        inputCost, 
-        outputCost, 
-        monthlyUsageEstimates[usageLevel]
-      );
-
-      return {
-        promptTokens,
-        responseTokens,
-        totalTokens,
-        withinContext: totalTokens <= contextWindow,
-        currentCost,
-        monthlyEstimate
-      };
-    } catch (e) {
-      setError('Error calculating metrics');
-      return {
-        promptTokens: 0,
-        responseTokens: 0,
-        totalTokens: 0,
-        withinContext: false,
-        currentCost: 0,
-        monthlyEstimate: 0
-      };
+    const modelInfo = modelData[provider][model];
+    const contextWindow = modelInfo.contextWindow[version];
+    const responseLimit = modelInfo.responseLimit?.[version];
+    
+    // Check if the model is self-hosted
+    const isHosted = typeof modelInfo.inputCost !== 'string' && typeof modelInfo.outputCost !== 'string';
+    
+    let totalCost = 'Self-hosted';
+    if (isHosted) {
+      const inputCost = modelInfo.inputCost[version];
+      const outputCost = modelInfo.outputCost[version];
+      totalCost = (promptTokens * inputCost + responseTokens * outputCost) / 1000;
     }
-  };
+    
+    const withinContext = typeof contextWindow === 'number' ? totalTokens <= contextWindow : true;
+    const withinResponse = typeof responseLimit === 'number' ? responseTokens <= responseLimit : true;
+    
+    setMetrics({
+      promptTokens,
+      responseTokens,
+      totalCost,
+      withinLimits: withinContext && withinResponse,
+      isHosted
+    });
+  }, [prompt, response, provider, model, version]);
 
   return (
-    <div className="p-4 space-y-6">
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded">
-          {error}
-        </div>
-      )}
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Input Prompt:</label>
-          <textarea
-            className="w-full h-32 p-2 border rounded"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter your prompt here..."
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-2">Expected Response:</label>
-          <textarea
-            className="w-full h-32 p-2 border rounded"
-            value={expectedResponse}
-            onChange={(e) => setExpectedResponse(e.target.value)}
-            placeholder="Enter expected response length..."
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-2">Usage Level:</label>
-          <select
-            className="w-full p-2 border rounded"
-            value={usageLevel}
-            onChange={(e) => setUsageLevel(e.target.value)}
-          >
-            <option value="low">Low (~1k prompts/month)</option>
-            <option value="medium">Medium (~5k prompts/month)</option>
-            <option value="high">High (~20k prompts/month)</option>
-          </select>
-        </div>
-      </div>
+    <div className="max-w-6xl mx-auto p-6">
+      <Card className="bg-white shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-2xl font-bold text-gray-800">Token Cost Calculator</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Provider</label>
+                  <select
+                    className="w-full p-2 border rounded-lg"
+                    value={provider}
+                    onChange={(e) => {
+                      setProvider(e.target.value);
+                      setModel(Object.keys(modelData[e.target.value])[0]);
+                      setVersion(modelData[e.target.value][Object.keys(modelData[e.target.value])[0]].versions[0]);
+                    }}
+                  >
+                    {Object.keys(modelData).map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                  <select
+                    className="w-full p-2 border rounded-lg"
+                    value={model}
+                    onChange={(e) => {
+                      setModel(e.target.value);
+                      setVersion(modelData[provider][e.target.value].versions[0]);
+                    }}
+                  >
+                    {Object.keys(modelData[provider]).map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Version</label>
+                  <select
+                    className="w-full p-2 border rounded-lg"
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                  >
+                    {modelData[provider][model].versions.map(v => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-      <div className="space-y-6">
-        {Object.entries(modelData).map(([org, models]) => (
-          <div key={org} className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-4 py-5 border-b border-gray-200">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">{org}</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload File (Optional)
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      className="w-full p-2 border rounded-lg"
+                      onChange={handleFileUpload}
+                      accept=".txt,.md,.json,.csv,.pdf"
+                      disabled={isProcessing}
+                    />
+                    <p className="text-sm text-gray-500">
+                      Supports: TXT, Markdown, JSON, CSV, and PDF files
+                    </p>
+                    {isProcessing && (
+                      <div className="text-blue-600">Processing file...</div>
+                    )}
+                    {fileError && (
+                      <div className="text-red-600">{fileError}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Input Prompt</label>
+                  <textarea
+                    className="w-full h-32 p-3 border rounded-lg resize-none"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Enter your prompt or upload a file..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Expected Response</label>
+                  <textarea
+                    className="w-full h-32 p-3 border rounded-lg resize-none"
+                    value={response}
+                    onChange={(e) => setResponse(e.target.value)}
+                    placeholder="Expected response length..."
+                  />
+                </div>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Context</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Response Limit</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Tokens</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Cost</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Est. Monthly</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(models).map(([modelName, model]) => (
-                    model.versions.map(version => {
-                      const metrics = calculateMetrics(prompt, expectedResponse, model, version);
-                      const contextWindow = getModelValue(model.contextWindow, version);
-                      const responseLimit = getModelValue(model.responseLimit, version);
-                      
-                      return (
-                        <tr key={`${modelName}-${version}`}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{modelName}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{version}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {typeof contextWindow === 'number' ? contextWindow.toLocaleString() : contextWindow}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {typeof responseLimit === 'number' ? responseLimit.toLocaleString() : responseLimit}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{metrics.totalTokens.toLocaleString()}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {typeof metrics.currentCost === 'string' ? metrics.currentCost : 
-                             `$${metrics.currentCost.toFixed(4)}`}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {typeof metrics.monthlyEstimate === 'string' ? metrics.monthlyEstimate :
-                             `$${metrics.monthlyEstimate.toFixed(2)}`}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={metrics.withinContext ? 
-                              'text-green-600' : 'text-red-600'}>
-                              {metrics.withinContext ? '✓' : '⚠️'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-6 rounded-xl">
+                <h3 className="text-xl font-semibold mb-4">Cost Analysis</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium">Input Tokens:</span>
+                    <span className="text-lg">{metrics.promptTokens.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium">Output Tokens:</span>
+                    <span className="text-lg">{metrics.responseTokens.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium">Context Window:</span>
+                    <span className="text-lg">
+                      {modelData[provider][model].contextWindow[version].toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium">Response Limit:</span>
+                    <span className="text-lg">
+                      {modelData[provider][model].responseLimit[version].toLocaleString()}
+                    </span>
+                  </div>
+                  <div className={`flex justify-between items-center p-3 rounded-lg shadow-sm ${
+                    metrics.withinLimits ? 'bg-green-50' : 'bg-red-50'
+                  }`}>
+                    <span className="font-medium">Status:</span>
+                    <span className={`text-lg ${
+                      metrics.withinLimits ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {metrics.withinLimits ? '✓ Within Limits' : '⚠️ Exceeds Limits'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg shadow-sm">
+                    <span className="font-semibold">Estimated Cost:</span>
+                    <span className="text-xl text-blue-600 font-bold">
+                      {formatCost(metrics.totalCost)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-xl">
+                <h3 className="text-xl font-semibold mb-4">Pricing Details</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span>Input Cost (per 1K tokens):</span>
+                    <span>
+                      {metrics.isHosted 
+                        ? formatCost(modelData[provider][model].inputCost[version])
+                        : modelData[provider][model].inputCost}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Output Cost (per 1K tokens):</span>
+                    <span>
+                      {metrics.isHosted
+                        ? formatCost(modelData[provider][model].outputCost[version])
+                        : modelData[provider][model].outputCost}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
-export default AIModelComparison;
+export default TokenCalculator;
